@@ -1,0 +1,60 @@
+{% extends 'base.html' %}
+
+{% block title %}Falling & Catch - Home{% endblock %}
+
+{% block content %}
+<div class="min-h-screen flex items-center justify-center p-8">
+    <div class="text-center fade-in">
+        <!-- Game Logo -->
+        <div class="mb-8 bounce">
+            <h1 class="text-8xl mb-4">🎮</h1>
+            <h1 class="text-6xl font-bold text-white mb-2">Falling & Catch</h1>
+            <p class="text-2xl text-white opacity-90">Learn with Fun!</p>
+        </div>
+
+        <!-- Subtitle -->
+        <div class="mb-12">
+            <p class="text-xl text-white opacity-80">
+                Use your hands to catch the right items and score points!
+            </p>
+        </div>
+
+        <!-- Start Button -->
+        <div class="space-y-4">
+            <a href="{% url 'game:level_select' %}" class="btn-primary inline-block">
+                <i class="fas fa-play mr-2"></i>
+                Start Game
+            </a>
+
+            <div class="mt-4">
+                <a href="{% url 'game:calibration' %}"
+                    class="text-white opacity-80 hover:opacity-100 transition-opacity">
+                    <i class="fas fa-video mr-2"></i>
+                    Calibrate Camera
+                </a>
+            </div>
+        </div>
+
+        <!-- Features -->
+        <div class="mt-16 grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto">
+            <div class="glass rounded-2xl p-6 fade-in" style="animation-delay: 0.1s;">
+                <div class="text-4xl mb-3">🔤</div>
+                <h3 class="text-xl font-semibold text-white mb-2">Learn Alphabet</h3>
+                <p class="text-white opacity-80">Practice letters and vowels</p>
+            </div>
+
+            <div class="glass rounded-2xl p-6 fade-in" style="animation-delay: 0.2s;">
+                <div class="text-4xl mb-3">🐾</div>
+                <h3 class="text-xl font-semibold text-white mb-2">Discover Animals</h3>
+                <p class="text-white opacity-80">Identify cute creatures</p>
+            </div>
+
+            <div class="glass rounded-2xl p-6 fade-in" style="animation-delay: 0.3s;">
+                <div class="text-4xl mb-3">⬛</div>
+                <h3 class="text-xl font-semibold text-white mb-2">Find Shapes</h3>
+                <p class="text-white opacity-80">Recognize colors and forms</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

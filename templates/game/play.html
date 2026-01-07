@@ -1,0 +1,824 @@
+{% extends 'base.html' %}
+
+{% block title %}Playing {{ mode_name }} - {{ level_name }} - Falling & Catch{% endblock %}
+
+{% block extra_styles %}
+<style>
+    #gameCanvas {
+        background: linear-gradient(180deg, #e0f7fa 0%, #ffffff 100%);
+        border-radius: 1rem;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+    }
+
+    #videoElement {
+        display: none;
+    }
+
+    .hud {
+        background: rgba(255, 255, 255, 0.95);
+        backdrop-filter: blur(10px);
+        border-radius: 1rem;
+        padding: 1rem 1.5rem;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    }
+
+    .heart-icon {
+        font-size: 2rem;
+        margin: 0 0.25rem;
+        transition: all 0.3s ease;
+    }
+
+    .heart-full {
+        color: #ff6b6b;
+    }
+
+    .heart-empty {
+        color: #e0e0e0;
+    }
+
+    #gameOverModal {
+        background: rgba(0, 0, 0, 0.8);
+    }
+
+    @keyframes shake {
+
+        0%,
+        100% {
+            transform: translateX(0);
+        }
+
+        25% {
+            transform: translateX(-10px);
+        }
+
+        75% {
+            transform: translateX(10px);
+        }
+    }
+
+    .shake {
+        animation: shake 0.5s;
+    }
+
+    @keyframes score-bounce {
+
+        0%,
+        100% {
+            transform: scale(1);
+        }
+
+        50% {
+            transform: scale(1.2);
+        }
+    }
+
+    .score-bounce {
+        animation: score-bounce 0.6s;
+    }
+
+    .timer-warning {
+        color: #f59e0b !important;
+        animation: pulse 1s infinite;
+    }
+
+    @keyframes pulse {
+
+        0%,
+        100% {
+            opacity: 1;
+        }
+
+        50% {
+            opacity: 0.6;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="min-h-screen p-8">
+    <div class="max-w-6xl mx-auto">
+        <!-- HUD -->
+        <div class="flex justify-between items-center mb-6 fade-in flex-wrap gap-4">
+            <!-- Score -->
+            <div class="hud">
+                <div class="text-sm text-gray-600 mb-1">Score</div>
+                <div id="scoreDisplay" class="text-4xl font-bold text-purple-600">0</div>
+                <div id="accuracyDisplay" class="text-xs text-gray-500 mt-1">Accuracy: 100%</div>
+            </div>
+
+            <!-- Timer -->
+            <div class="hud">
+                <div class="text-sm text-gray-600 mb-1 text-center">Time Left</div>
+                <div id="timerDisplay" class="text-4xl font-bold text-green-600">2:00</div>
+            </div>
+
+            <!-- Mode & Level Info -->
+            <div class="hud text-center">
+                <div class="text-sm text-gray-600">{{ mode_name }} - {{ level_name }}</div>
+                <div class="text-lg font-bold">Target: <span id="targetDisplay">Loading...</span></div>
+            </div>
+
+            <!-- Hearts -->
+            <div class="hud">
+                <div class="text-sm text-gray-600 mb-1 text-center">Hearts</div>
+                <div id="heartsDisplay" class="flex"></div>
+            </div>
+        </div>
+
+        <!-- Game Canvas -->
+        <div class="relative fade-in" style="animation-delay: 0.1s;">
+            <canvas id="gameCanvas" width="1200" height="700"></canvas>
+            <!-- Hidden video element for camera -->
+            <video id="videoElement" width="640" height="480" autoplay playsinline></video>
+        </div>
+
+        <!-- Controls Info -->
+        <div class="mt-6 text-center text-white">
+            <p class="text-lg opacity-80">
+                <i class="fas fa-hand mr-2"></i>Move your hand left and right to control the basket!
+            </p>
+            <p class="text-sm opacity-60 mt-2">
+                <i class="fas fa-info-circle mr-2"></i>Adjust the speed slider below if items are falling too fast
+            </p>
+        </div>
+
+        <!-- Speed Slider (Accessibility) -->
+        <div class="hud mt-6 fade-in" style="animation-delay: 0.2s;">
+            <div class="flex items-center justify-between mb-2">
+                <div class="text-sm font-bold text-gray-700">
+                    <i class="fas fa-universal-access mr-2"></i>Speed Control (Accessibility)
+                </div>
+                <div id="speedValue" class="text-sm font-bold text-purple-600">1.0x</div>
+            </div>
+            <input type="range" id="speedSlider" class="speed-slider" min="0.5" max="3.0" step="0.1" value="1.0">
+            <div class="flex justify-between text-xs text-gray-500 mt-1">
+                <span>0.5x (Very Slow)</span>
+                <span>1.0x (Normal)</span>
+                <span>3.0x (Very Fast)</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Game Over Modal -->
+<div id="gameOverModal" class="fixed inset-0 flex items-center justify-center hidden">
+    <div class="card max-w-lg w-full mx-4 text-center">
+        <div id="gameOverIcon" class="text-7xl mb-4"></div>
+        <h2 id="gameOverTitle" class="text-4xl font-bold mb-4"></h2>
+
+        <!-- Score Summary -->
+        <div class="bg-gray-100 rounded-xl p-6 mb-6">
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                    <div class="text-sm text-gray-600">Correct Catches</div>
+                    <div id="correctCatchesDisplay" class="text-3xl font-bold text-green-600">0</div>
+                </div>
+                <div>
+                    <div class="text-sm text-gray-600">Incorrect Catches</div>
+                    <div id="incorrectCatchesDisplay" class="text-3xl font-bold text-red-600">0</div>
+                </div>
+            </div>
+            <div class="border-t pt-4">
+                <div class="text-sm text-gray-600 mb-1">Accuracy</div>
+                <div id="accuracyPercentage" class="text-5xl font-bold text-purple-600">100%</div>
+            </div>
+            <div class="mt-4">
+                <div class="text-sm text-gray-600 mb-1">Total Time</div>
+                <div id="totalTimeDisplay" class="text-2xl font-bold text-blue-600">0:00</div>
+            </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="space-x-2 space-y-2">
+            <button onclick="restartGame()" class="btn-secondary">
+                <i class="fas fa-rotate-right mr-2"></i>Retry Level
+            </button>
+            <a href="{% url 'game:level_select' %}" class="btn-primary inline-block">
+                <i class="fas fa-list mr-2"></i>Level Select
+            </a>
+            <a href="{% url 'game:home' %}" class="btn-success inline-block">
+                <i class="fas fa-home mr-2"></i>Main Menu
+            </a>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Helper function to draw rounded rectangles
+    function drawRoundedRect(ctx, x, y, width, height, radius) {
+        ctx.beginPath();
+        ctx.moveTo(x + radius, y);
+        ctx.lineTo(x + width - radius, y);
+        ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+        ctx.lineTo(x + width, y + height - radius);
+        ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+        ctx.lineTo(x + radius, y + height);
+        ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+        ctx.lineTo(x, y + radius);
+        ctx.quadraticCurveTo(x, y, x + radius, y);
+        ctx.closePath();
+    }
+
+    // Game configuration from Django
+    const gameConfig = {{ config_json| safe }};
+
+    // Game constants
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const CANVAS_WIDTH = canvas.width;
+    const CANVAS_HEIGHT = canvas.height;
+
+    // Spawn grid configuration
+    const ITEM_WIDTH = 80;
+    const ITEM_HEIGHT = 80;
+    const COLUMNS = 10; // Divide canvas into columns
+    const COLUMN_WIDTH = CANVAS_WIDTH / COLUMNS;
+    const MIN_VERTICAL_SPACING = 200; // Minimum pixels between items vertically
+    const MIN_SPAWN_DELAY = 800; // Minimum milliseconds between spawns
+
+    // Game state
+    let gameState = {
+        score: 0,
+        hearts: gameConfig.level.starting_hearts,
+        correctCatches: 0,
+        incorrectCatches: 0,
+        timeRemaining: gameConfig.level.time_limit,
+        startTime: null,
+        gameOver: false,
+        won: false,
+        currentTarget: null,
+        customSpeedMultiplier: 1.0,
+        nextCorrectSpawnTime: 0,
+        correctElementActive: false
+    };
+
+    // Basket
+    const basket = {
+        width: 120,
+        height: 80,
+        x: CANVAS_WIDTH / 2 - 60,
+        y: CANVAS_HEIGHT - 120,
+        color: '#ff6b6b'
+    };
+
+    // Falling items
+    let items = [];
+    let lastSpawnTime = 0;
+    let lastSpawnColumn = -1;
+
+    // Hand tracking
+    let hands, camera;
+    let handX = null;
+    let calibration = null;
+
+    // Kalman Filter for smooth hand tracking
+    class KalmanFilter {
+        constructor(R = 0.01, Q = 3) {
+            this.R = R;
+            this.Q = Q;
+            this.x = 0;
+            this.P = 1;
+        }
+
+        filter(measurement) {
+            this.P = this.P + this.Q;
+            const K = this.P / (this.P + this.R);
+            this.x = this.x + K * (measurement - this.x);
+            this.P = (1 - K) * this.P;
+            return this.x;
+        }
+    }
+
+    const kalmanX = new KalmanFilter(0.01, 3);
+    let timerInterval = null;
+
+    function loadCalibration() {
+        const saved = localStorage.getItem('handCalibration');
+        if (saved) {
+            calibration = JSON.parse(saved);
+            console.log('Calibration loaded:', calibration);
+        } else {
+            console.warn('No calibration found. Using defaults.');
+            calibration = {
+                leftBound: 0.2,
+                rightBound: 0.8
+            };
+        }
+    }
+
+    function loadCustomSpeed() {
+        const saved = localStorage.getItem('customSpeed');
+        if (saved) {
+            gameState.customSpeedMultiplier = parseFloat(saved);
+            document.getElementById('speedSlider').value = gameState.customSpeedMultiplier;
+            updateSpeedDisplay();
+        }
+    }
+
+    function saveCustomSpeed() {
+        localStorage.setItem('customSpeed', gameState.customSpeedMultiplier.toString());
+    }
+
+    function updateSpeedDisplay() {
+        document.getElementById('speedValue').textContent = gameState.customSpeedMultiplier.toFixed(1) + 'x';
+    }
+
+    document.getElementById('speedSlider').addEventListener('input', (e) => {
+        gameState.customSpeedMultiplier = parseFloat(e.target.value);
+        updateSpeedDisplay();
+        saveCustomSpeed();
+    });
+
+    function initializeHands() {
+        const videoElement = document.getElementById('videoElement');
+
+        hands = new Hands({
+            locateFile: (file) => {
+                return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+            }
+        });
+
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+
+        hands.onResults(onHandResults);
+
+        camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({ image: videoElement });
+            },
+            width: 640,
+            height: 480
+        });
+
+        camera.start();
+    }
+
+    function onHandResults(results) {
+        if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+            const landmarks = results.multiHandLandmarks[0];
+            const wrist = landmarks[0];
+            const normalizedX = 1 - wrist.x;
+
+            let mappedX;
+            if (normalizedX < calibration.leftBound) {
+                mappedX = 0;
+            } else if (normalizedX > calibration.rightBound) {
+                mappedX = 1;
+            } else {
+                mappedX = (normalizedX - calibration.leftBound) / (calibration.rightBound - calibration.leftBound);
+            }
+
+            const rawBasketX = mappedX * (CANVAS_WIDTH - basket.width);
+            const smoothedBasketX = kalmanX.filter(rawBasketX);
+            basket.x = smoothedBasketX;
+        }
+    }
+
+    function selectNewTarget() {
+        const correctItems = gameConfig.mode.correct_items;
+        const targetItem = correctItems[Math.floor(Math.random() * correctItems.length)];
+        gameState.currentTarget = targetItem;
+        updateTargetDisplay();
+        announceTarget();
+    }
+
+    function updateTargetDisplay() {
+        const target = gameState.currentTarget;
+        const itemType = gameConfig.mode.item_type;
+        const modeData = gameConfig.mode.data;
+
+        let displayText = target;
+
+        if (itemType === 'phonics' && gameConfig.mode.phonics_map) {
+            displayText = gameConfig.mode.phonics_map[target];
+        } else if (modeData && modeData[target]) {
+            displayText = modeData[target].name;
+        }
+
+        document.getElementById('targetDisplay').textContent = displayText;
+    }
+
+    function announceTarget() {
+        const target = gameState.currentTarget;
+        const audioTemplate = gameConfig.mode.audio_template;
+        const itemType = gameConfig.mode.item_type;
+        const modeData = gameConfig.mode.data;
+
+        let audioText = audioTemplate;
+
+        if (itemType === 'uppercase' || itemType === 'lowercase') {
+            audioText = audioTemplate.replace('{item}', target);
+        } else if (itemType === 'phonics') {
+            const phonics = gameConfig.mode.phonics_map[target];
+            audioText = audioTemplate.replace('{phonics}', phonics);
+        } else if (itemType === 'picture' && modeData) {
+            const name = modeData[target].name;
+            audioText = audioTemplate.replace('{name}', name);
+        } else if (itemType === 'picture+word' && modeData) {
+            const name = modeData[target].name;
+            audioText = audioTemplate.replace('{name}', name);
+        } else if (itemType === 'riddle' && modeData) {
+            const riddle = modeData[target].riddle;
+            audioText = audioTemplate.replace('{riddle}', riddle);
+        }
+
+        speak(audioText);
+    }
+
+    // Check if a column is safe to spawn in (no items too close vertically)
+    function isColumnSafe(columnIndex) {
+        const columnStartX = columnIndex * COLUMN_WIDTH;
+        const columnEndX = columnStartX + COLUMN_WIDTH;
+
+        for (let item of items) {
+            // Check if item is in this column
+            if (item.x >= columnStartX - ITEM_WIDTH && item.x < columnEndX) {
+                // Check if item is too close to top (within MIN_VERTICAL_SPACING)
+                if (item.y < MIN_VERTICAL_SPACING) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    // Get a safe spawn position
+    function getSafeSpawnPosition() {
+        let availableColumns = [];
+
+        // Find all safe columns
+        for (let col = 0; col < COLUMNS; col++) {
+            if (isColumnSafe(col)) {
+                availableColumns.push(col);
+            }
+        }
+
+        // If no columns are safe, wait
+        if (availableColumns.length === 0) {
+            return null;
+        }
+
+        // Remove the last spawned column from available columns if possible
+        if (availableColumns.length > 1) {
+            availableColumns = availableColumns.filter(col => col !== lastSpawnColumn);
+        }
+
+        // Choose a random safe column
+        const chosenColumn = availableColumns[Math.floor(Math.random() * availableColumns.length)];
+        lastSpawnColumn = chosenColumn;
+
+        // Calculate X position with some random variation within the column
+        const columnStartX = chosenColumn * COLUMN_WIDTH;
+        const maxOffset = COLUMN_WIDTH - ITEM_WIDTH;
+        const randomOffset = Math.random() * maxOffset;
+
+        return columnStartX + randomOffset;
+    }
+
+    class FallingItem {
+        constructor(forceCorrect = false, spawnX = null) {
+            this.width = ITEM_WIDTH;
+            this.height = ITEM_HEIGHT;
+
+            // Use provided X position or get a safe one
+            if (spawnX !== null) {
+                this.x = spawnX;
+            } else {
+                const safeX = getSafeSpawnPosition();
+                this.x = safeX !== null ? safeX : Math.random() * (CANVAS_WIDTH - this.width);
+            }
+
+            this.y = -this.height;
+
+            if (forceCorrect) {
+                this.content = gameState.currentTarget;
+                this.isCorrect = true;
+                gameState.correctElementActive = true;
+            } else {
+                const wrongItems = gameConfig.mode.wrong_items;
+                this.content = wrongItems[Math.floor(Math.random() * wrongItems.length)];
+                this.isCorrect = false;
+            }
+
+            this.itemType = gameConfig.mode.item_type;
+            this.modeData = gameConfig.mode.data;
+        }
+
+        update() {
+            const baseSpeed = gameConfig.level.base_speed;
+            const actualSpeed = baseSpeed * gameState.customSpeedMultiplier;
+            this.y += actualSpeed;
+        }
+
+        draw() {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+            ctx.fillRect(this.x + 5, this.y + 5, this.width, this.height);
+
+            ctx.fillStyle = this.isCorrect ? '#4ade80' : '#f87171';
+            drawRoundedRect(ctx, this.x, this.y, this.width, this.height, 12);
+            ctx.fill();
+
+            if (this.itemType === 'picture+word' && this.modeData) {
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 32px Fredoka';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(this.content, this.x + this.width / 2, this.y + this.height / 3);
+
+                ctx.font = 'bold 14px Fredoka';
+                const word = this.modeData[this.content].name.toUpperCase();
+                ctx.fillText(word, this.x + this.width / 2, this.y + this.height * 2 / 3);
+            } else {
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 40px Fredoka';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(this.content, this.x + this.width / 2, this.y + this.height / 2);
+            }
+        }
+
+        isOffScreen() {
+            return this.y > CANVAS_HEIGHT;
+        }
+
+        collidesWithBasket() {
+            return this.x < basket.x + basket.width &&
+                this.x + this.width > basket.x &&
+                this.y < basket.y + basket.height &&
+                this.y + this.height > basket.y;
+        }
+    }
+
+    function drawBasket() {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+        ctx.fillRect(basket.x + 5, basket.y + 5, basket.width, basket.height);
+
+        const gradient = ctx.createLinearGradient(basket.x, basket.y, basket.x, basket.y + basket.height);
+        gradient.addColorStop(0, '#ff6b6b');
+        gradient.addColorStop(1, '#ee5a6f');
+        ctx.fillStyle = gradient;
+        drawRoundedRect(ctx, basket.x, basket.y, basket.width, basket.height, 15);
+        ctx.fill();
+
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(basket.x + basket.width / 2, basket.y + 10, basket.width / 2 - 10, Math.PI, 0);
+        ctx.stroke();
+
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 24px Fredoka';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('🧺', basket.x + basket.width / 2, basket.y + basket.height / 2 + 5);
+    }
+
+    function spawnItem(timestamp) {
+        // Check if enough time has passed since last spawn
+        if (timestamp - lastSpawnTime < MIN_SPAWN_DELAY) {
+            return;
+        }
+
+        // Check if it's time to spawn the correct element
+        if (!gameState.correctElementActive && timestamp >= gameState.nextCorrectSpawnTime) {
+            const spawnX = getSafeSpawnPosition();
+            if (spawnX !== null) {
+                items.push(new FallingItem(true, spawnX));
+                lastSpawnTime = timestamp;
+                console.log('Spawned correct element:', gameState.currentTarget);
+            }
+            return; // Don't spawn distractor in same frame
+        }
+
+        // Spawn distractor items
+        if (items.length < gameConfig.mode.items_on_screen) {
+            const spawnX = getSafeSpawnPosition();
+            if (spawnX !== null) {
+                items.push(new FallingItem(false, spawnX));
+                lastSpawnTime = timestamp;
+            }
+        }
+    }
+
+    function scheduleNextCorrectElement(currentTimestamp) {
+        let delay = (Math.random() * (10 - 3) + 3) * 1000;
+
+        if (gameState.timeRemaining < 10) {
+            delay = Math.min(delay, 2000);
+        }
+
+        gameState.nextCorrectSpawnTime = currentTimestamp + delay;
+        gameState.correctElementActive = false;
+
+        console.log(`Next correct element (${gameState.currentTarget}) scheduled in ${(delay / 1000).toFixed(1)} seconds`);
+    }
+
+    function update(timestamp) {
+        spawnItem(timestamp);
+
+        for (let i = items.length - 1; i >= 0; i--) {
+            const item = items[i];
+            item.update();
+
+            if (item.collidesWithBasket()) {
+                handleCatch(item);
+                items.splice(i, 1);
+            } else if (item.isOffScreen()) {
+                if (item.isCorrect) {
+                    gameState.correctElementActive = false;
+                    scheduleNextCorrectElement(timestamp);
+                }
+                items.splice(i, 1);
+            }
+        }
+    }
+
+    function handleCatch(item) {
+        if (item.isCorrect) {
+            gameState.score += 10;
+            gameState.correctCatches++;
+            updateScoreDisplay();
+
+            confetti({
+                particleCount: 30,
+                spread: 60,
+                origin: {
+                    x: (basket.x + basket.width / 2) / CANVAS_WIDTH,
+                    y: basket.y / CANVAS_HEIGHT
+                }
+            });
+
+            speak('Correct!');
+            selectNewTarget();
+            scheduleNextCorrectElement(performance.now());
+        } else {
+            gameState.hearts--;
+            gameState.incorrectCatches++;
+            updateHeartsDisplay();
+            updateScoreDisplay();
+
+            canvas.classList.add('shake');
+            setTimeout(() => canvas.classList.remove('shake'), 500);
+
+            speak('Try again!');
+
+            if (gameState.hearts <= 0) {
+                endGame(false);
+            }
+        }
+    }
+
+    function gameLoop(timestamp) {
+        if (gameState.gameOver) return;
+
+        ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+        update(timestamp);
+        items.forEach(item => item.draw());
+        drawBasket();
+
+        requestAnimationFrame(gameLoop);
+    }
+
+    function updateScoreDisplay() {
+        const display = document.getElementById('scoreDisplay');
+        display.textContent = gameState.score;
+        display.classList.add('score-bounce');
+        setTimeout(() => display.classList.remove('score-bounce'), 600);
+
+        const totalAttempts = gameState.correctCatches + gameState.incorrectCatches;
+        const accuracy = totalAttempts > 0 ? (gameState.correctCatches / totalAttempts * 100).toFixed(1) : 100;
+        document.getElementById('accuracyDisplay').textContent = `Accuracy: ${accuracy}%`;
+    }
+
+    function updateHeartsDisplay() {
+        const display = document.getElementById('heartsDisplay');
+        display.innerHTML = '';
+
+        for (let i = 0; i < gameConfig.level.starting_hearts; i++) {
+            const heart = document.createElement('span');
+            heart.className = 'heart-icon';
+            heart.textContent = '❤️';
+
+            if (i >= gameState.hearts) {
+                heart.classList.add('heart-empty');
+                heart.classList.add('heart-lost');
+                heart.textContent = '🤍';
+            } else {
+                heart.classList.add('heart-full');
+            }
+
+            display.appendChild(heart);
+        }
+    }
+
+    function updateTimerDisplay() {
+        const minutes = Math.floor(gameState.timeRemaining / 60);
+        const seconds = gameState.timeRemaining % 60;
+        const timeString = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+
+        const display = document.getElementById('timerDisplay');
+        display.textContent = timeString;
+
+        if (gameState.timeRemaining <= 30 && gameState.timeRemaining > 0) {
+            display.classList.add('timer-warning');
+        }
+
+        if (gameState.timeRemaining <= 0) {
+            endGame(false, true);
+        }
+    }
+
+    function startTimer() {
+        gameState.startTime = Date.now();
+        timerInterval = setInterval(() => {
+            if (!gameState.gameOver) {
+                gameState.timeRemaining--;
+                updateTimerDisplay();
+            }
+        }, 1000);
+    }
+
+    function speak(text) {
+        if ('speechSynthesis' in window) {
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.rate = 1.0;
+            utterance.pitch = 1.2;
+            speechSynthesis.speak(utterance);
+        }
+    }
+
+    function endGame(won, timeout = false) {
+        gameState.gameOver = true;
+        gameState.won = won;
+
+        if (timerInterval) {
+            clearInterval(timerInterval);
+        }
+
+        const modal = document.getElementById('gameOverModal');
+        const icon = document.getElementById('gameOverIcon');
+        const title = document.getElementById('gameOverTitle');
+
+        if (timeout) {
+            icon.textContent = '⏰';
+            title.textContent = 'Time\'s Up!';
+            title.style.color = '#f59e0b';
+            speak('Time is up!');
+        } else if (won) {
+            icon.textContent = '🎉';
+            title.textContent = 'You Won!';
+            title.style.color = '#4ade80';
+            confetti({
+                particleCount: 200,
+                spread: 100,
+                origin: { y: 0.6 }
+            });
+            speak('Congratulations! You won!');
+        } else {
+            icon.textContent = '😢';
+            title.textContent = 'Game Over';
+            title.style.color = '#f87171';
+            speak('Game over. Try again!');
+        }
+
+        const totalAttempts = gameState.correctCatches + gameState.incorrectCatches;
+        const accuracy = totalAttempts > 0 ? (gameState.correctCatches / totalAttempts * 100).toFixed(1) : 100;
+        const timeElapsed = gameConfig.level.time_limit - gameState.timeRemaining;
+        const minutes = Math.floor(timeElapsed / 60);
+        const seconds = timeElapsed % 60;
+
+        document.getElementById('correctCatchesDisplay').textContent = gameState.correctCatches;
+        document.getElementById('incorrectCatchesDisplay').textContent = gameState.incorrectCatches;
+        document.getElementById('accuracyPercentage').textContent = accuracy + '%';
+        document.getElementById('totalTimeDisplay').textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+
+        modal.classList.remove('hidden');
+    }
+
+    function restartGame() {
+        window.location.reload();
+    }
+
+    window.addEventListener('load', () => {
+        loadCalibration();
+        loadCustomSpeed();
+        initializeHands();
+        updateHeartsDisplay();
+        updateTimerDisplay();
+        selectNewTarget();
+
+        gameState.nextCorrectSpawnTime = performance.now() + 2000;
+
+        startTimer();
+        requestAnimationFrame(gameLoop);
+
+        speak(`Welcome to ${gameConfig.mode.name} at ${gameConfig.level.name} level!`);
+    });
+</script>
+{% endblock %}

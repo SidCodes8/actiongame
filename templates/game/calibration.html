@@ -1,0 +1,457 @@
+{% extends 'base.html' %}
+
+{% block title %}Calibrate Camera - Falling & Catch{% endblock %}
+
+{% block extra_styles %}
+<style>
+    .calibration-container {
+        position: relative;
+        width: 100%;
+        max-width: 1000px;
+        margin: 0 auto;
+        aspect-ratio: 4/3;
+        background: #000;
+        border-radius: 1rem;
+        overflow: hidden;
+    }
+
+    #videoElement {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        transform: scaleX(-1);
+        border-radius: 1rem;
+    }
+
+    #calibrationCanvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        transform: scaleX(-1);
+        border-radius: 1rem;
+        pointer-events: none;
+    }
+
+    .calibration-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+    }
+
+    .calibration-line {
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 4px;
+        height: 80%;
+        background: rgba(76, 201, 240, 0.8);
+        box-shadow: 0 0 20px rgba(76, 201, 240, 0.6);
+        transition: all 0.3s ease;
+    }
+
+    .calibration-line.left {
+        left: 20%;
+    }
+
+    .calibration-line.right {
+        right: 20%;
+    }
+
+    .calibration-line.captured {
+        background: rgba(34, 197, 94, 0.9);
+        box-shadow: 0 0 30px rgba(34, 197, 94, 0.8);
+    }
+
+    .calibration-button {
+        position: absolute;
+        padding: 12px 24px;
+        background: rgba(76, 201, 240, 0.9);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        font-weight: bold;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        pointer-events: auto;
+        z-index: 10;
+    }
+
+    .calibration-button:hover {
+        background: rgba(76, 201, 240, 1);
+        transform: scale(1.05);
+    }
+
+    .calibration-button:disabled {
+        background: rgba(128, 128, 128, 0.5);
+        cursor: not-allowed;
+        transform: scale(1);
+    }
+
+    .calibration-button.left-btn {
+        top: 50%;
+        left: 10%;
+        transform: translateY(-50%);
+    }
+
+    .calibration-button.right-btn {
+        top: 50%;
+        right: 10%;
+        transform: translateY(-50%);
+    }
+
+    .calibration-values {
+        background: rgba(255, 255, 255, 0.95);
+        border-radius: 1rem;
+        padding: 1.5rem;
+        margin-top: 2rem;
+    }
+
+    .value-box {
+        text-align: center;
+        padding: 1rem;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 0.5rem;
+        color: white;
+    }
+
+    .value-box.captured {
+        background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+    }
+
+    .hand-indicator {
+        position: absolute;
+        top: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0, 0, 0, 0.7);
+        color: white;
+        padding: 10px 20px;
+        border-radius: 8px;
+        font-weight: bold;
+        z-index: 5;
+    }
+
+    .hand-indicator.detected {
+        background: rgba(34, 197, 94, 0.8);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="min-h-screen p-8">
+    <div class="max-w-6xl mx-auto">
+        <!-- Header -->
+        <div class="text-center mb-8 fade-in">
+            <a href="{% url 'game:level_select' %}"
+                class="text-white opacity-80 hover:opacity-100 transition-opacity inline-block mb-4">
+                <i class="fas fa-arrow-left mr-2"></i>
+                Back to Level Select
+            </a>
+            <h1 class="text-5xl font-bold text-white mb-4">
+                <i class="fas fa-video mr-3"></i>
+                Camera Calibration
+            </h1>
+            <p class="text-xl text-white opacity-90">Set your hand tracking boundaries</p>
+        </div>
+
+        <!-- Instructions -->
+        <div class="card mb-6 fade-in" style="animation-delay: 0.1s;">
+            <h2 class="text-2xl font-bold mb-4">
+                <i class="fas fa-info-circle mr-2 text-blue-500"></i>
+                How to Calibrate
+            </h2>
+            <ol class="space-y-3 text-lg">
+                <li class="flex items-start">
+                    <span class="font-bold text-purple-600 mr-3">1.</span>
+                    <span>Position your hand at the <strong>far right</strong> edge of where you want to move it</span>
+                </li>
+                <li class="flex items-start">
+                    <span class="font-bold text-purple-600 mr-3">2.</span>
+                    <span>Click the <strong>"Capture Right"</strong> button while holding hand on right position</span>
+                </li>
+                <li class="flex items-start">
+                    <span class="font-bold text-purple-600 mr-3">3.</span>
+                    <span>Move your hand to the <strong>far left</strong> edge</span>
+                </li>
+                <li class="flex items-start">
+                    <span class="font-bold text-purple-600 mr-3">4.</span>
+                    <span>Click the <strong>"Capture Left"</strong> button</span>
+                </li>
+                <li class="flex items-start">
+                    <span class="font-bold text-purple-600 mr-3">5.</span>
+                    <span>Click <strong>"Save & Continue"</strong> to start playing!</span>
+                </li>
+            </ol>
+        </div>
+
+        <!-- Camera Feed -->
+        <div class="card fade-in" style="animation-delay: 0.2s;">
+            <div class="calibration-container">
+                <video id="videoElement" autoplay playsinline></video>
+                <canvas id="calibrationCanvas"></canvas>
+
+                <!-- Hand Detection Indicator -->
+                <div id="handIndicator" class="hand-indicator">
+                    Waiting for hand...
+                </div>
+
+                <!-- Calibration Overlay -->
+                <div class="calibration-overlay">
+                    <!-- Left Boundary Line -->
+                    <div id="leftLine" class="calibration-line left"></div>
+
+                    <!-- Right Boundary Line -->
+                    <div id="rightLine" class="calibration-line right"></div>
+
+                    <!-- Capture Buttons -->
+                    <button id="captureLeftBtn" class="calibration-button right-btn">
+                        <i class="fas fa-hand-point-right mr-2"></i>
+                        Capture Right
+                    </button>
+                    <button id="captureRightBtn" class="calibration-button left-btn" disabled>
+                        <i class="fas fa-hand-point-left mr-2"></i>
+                        Capture Left
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Calibration Values -->
+        <div class="calibration-values fade-in" style="animation-delay: 0.3s;">
+            <div class="grid grid-cols-2 gap-6 mb-6">
+                <div id="leftValueBox" class="value-box">
+                    <div class="text-sm opacity-90 mb-2">Right Boundary</div>
+                    <div id="leftValue" class="text-3xl font-bold">Not Set</div>
+                </div>
+                <div id="rightValueBox" class="value-box">
+                    <div class="text-sm opacity-90 mb-2">Left Boundary</div>
+                    <div id="rightValue" class="text-3xl font-bold">Not Set</div>
+                </div>
+            </div>
+
+            <!-- Save Button -->
+            <div class="text-center">
+                <button id="saveBtn" class="btn-success" onclick="saveCalibration()" disabled>
+                    <i class="fas fa-check mr-2"></i>
+                    Save & Continue
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // MediaPipe Hands setup
+    let hands, camera;
+    let currentHandX = null;
+    let leftBound = null;
+    let rightBound = null;
+
+    const videoElement = document.getElementById('videoElement');
+    const canvasElement = document.getElementById('calibrationCanvas');
+    const canvasCtx = canvasElement.getContext('2d');
+
+    // Initialize MediaPipe Hands
+    function initializeHands() {
+        hands = new Hands({
+            locateFile: (file) => {
+                return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+            }
+        });
+
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+
+        hands.onResults(onHandResults);
+
+        camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({ image: videoElement });
+            },
+            width: 1280,
+            height: 720
+        });
+
+        camera.start();
+    }
+
+    // Function to resize canvas to match displayed video dimensions
+    function resizeCanvas() {
+        const video = document.getElementById('videoElement');
+        const canvas = document.getElementById('calibrationCanvas');
+
+        // Use displayed dimensions, not internal resolution
+        const displayWidth = video.clientWidth;
+        const displayHeight = video.clientHeight;
+
+        canvas.width = displayWidth;
+        canvas.height = displayHeight;
+    }
+
+    // Handle hand tracking results
+    function onHandResults(results) {
+        // Match canvas size to video
+        resizeCanvas();
+
+        // Clear canvas
+        canvasCtx.save();
+        canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
+        // Update hand indicator
+        const indicator = document.getElementById('handIndicator');
+
+        if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+            const landmarks = results.multiHandLandmarks[0];
+
+            // Draw hand skeleton with green color
+            drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {
+                color: '#00FF00',
+                lineWidth: 5
+            });
+            drawLandmarks(canvasCtx, landmarks, {
+                color: '#FF0000',
+                lineWidth: 2
+            });
+
+            // Get wrist position (landmark 0)
+            const wrist = landmarks[0];
+            currentHandX = wrist.x;
+
+            // Update indicator
+            indicator.textContent = 'Hand Detected ✓';
+            indicator.classList.add('detected');
+        } else {
+            currentHandX = null;
+            indicator.textContent = 'Waiting for hand...';
+            indicator.classList.remove('detected');
+        }
+
+        canvasCtx.restore();
+    }
+
+    // Capture left boundary
+    document.getElementById('captureLeftBtn').addEventListener('click', () => {
+        if (currentHandX !== null) {
+            leftBound = currentHandX;
+            document.getElementById('leftValue').textContent = (leftBound * 100).toFixed(1) + '%';
+            document.getElementById('leftValueBox').classList.add('captured');
+            document.getElementById('rightLine').classList.add('captured');
+            document.getElementById('captureLeftBtn').disabled = true;
+            document.getElementById('captureRightBtn').disabled = false;
+
+            // Visual feedback
+            confetti({
+                particleCount: 50,
+                spread: 60,
+                origin: { x: 0.8, y: 0.5 }
+            });
+
+            console.log('Left boundary captured (as Right in UI):', leftBound);
+        } else {
+            alert('No hand detected! Please show your hand to the camera.');
+        }
+    });
+
+    // Capture right boundary
+    document.getElementById('captureRightBtn').addEventListener('click', () => {
+        if (currentHandX !== null) {
+            rightBound = currentHandX;
+            document.getElementById('rightValue').textContent = (rightBound * 100).toFixed(1) + '%';
+            document.getElementById('rightValueBox').classList.add('captured');
+            document.getElementById('leftLine').classList.add('captured');
+            document.getElementById('captureRightBtn').disabled = true;
+            document.getElementById('saveBtn').disabled = false;
+
+            // Visual feedback
+            confetti({
+                particleCount: 50,
+                spread: 60,
+                origin: { x: 0.2, y: 0.5 }
+            });
+
+            console.log('Right boundary captured (as Left in UI):', rightBound);
+        } else {
+            alert('No hand detected! Please show your hand to the camera.');
+        }
+    });
+
+    // Save calibration
+    function saveCalibration() {
+        if (leftBound === null || rightBound === null) {
+            alert('Please capture both left and right boundaries first!');
+            return;
+        }
+
+        // Validate that left < right
+        if (leftBound >= rightBound) {
+            alert('Error: Right boundary must be less than Left boundary (in raw coordinates). Please recalibrate.');
+            // Reset calibration
+            leftBound = null;
+            rightBound = null;
+            document.getElementById('leftValue').textContent = 'Not Set';
+            document.getElementById('rightValue').textContent = 'Not Set';
+            document.getElementById('leftValueBox').classList.remove('captured');
+            document.getElementById('rightValueBox').classList.remove('captured');
+            document.getElementById('leftLine').classList.remove('captured');
+            document.getElementById('rightLine').classList.remove('captured');
+            document.getElementById('captureLeftBtn').disabled = false;
+            document.getElementById('captureRightBtn').disabled = true;
+            document.getElementById('saveBtn').disabled = true;
+            return;
+        }
+
+        // Save to localStorage
+        // Note: The game uses (1 - x) logic for coordinates (mirroring).
+        // We must transform our raw bounds to match that coordinate space.
+        // Raw Left (Low) -> Game Right (High)
+        // Raw Right (High) -> Game Left (Low)
+        const calibration = {
+            leftBound: 1 - rightBound,
+            rightBound: 1 - leftBound,
+            calibrated: true,
+            timestamp: new Date().toISOString()
+        };
+
+        localStorage.setItem('handCalibration', JSON.stringify(calibration));
+
+        console.log('Calibration saved:', calibration);
+
+        // Show success
+        confetti({
+            particleCount: 150,
+            spread: 100,
+            origin: { y: 0.6 }
+        });
+
+        // Redirect to level select
+        setTimeout(() => {
+            window.location.href = "{% url 'game:level_select' %}";
+        }, 1500);
+    }
+
+    // Initialize on page load
+    window.addEventListener('load', () => {
+        console.log('Initializing calibration...');
+        initializeHands();
+
+        // Check if already calibrated
+        const saved = localStorage.getItem('handCalibration');
+        if (saved) {
+            const calib = JSON.parse(saved);
+            console.log('Previous calibration found:', calib);
+        }
+    });
+</script>
+{% endblock %}
